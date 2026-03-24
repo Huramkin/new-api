@@ -32,6 +32,20 @@
   - [9.3 无法实现的功能及原因](#93-无法实现的功能及原因)
   - [9.4 Cloudflare 替代方案对照表](#94-cloudflare-替代方案对照表)
 - [10. 推荐的迁移策略](#10-推荐的迁移策略)
+- [11. 前端页面迁移实现](#11-前端页面迁移实现)
+  - [11.1 前端项目结构](#111-前端项目结构)
+  - [11.2 前端技术栈与依赖](#112-前端技术栈与依赖)
+  - [11.3 前端路由与页面清单](#113-前端路由与页面清单)
+  - [11.4 布局组件体系](#114-布局组件体系)
+  - [11.5 前端与后端的交互方式](#115-前端与后端的交互方式)
+  - [11.6 状态管理](#116-状态管理)
+  - [11.7 国际化实现](#117-国际化实现)
+  - [11.8 样式体系](#118-样式体系)
+  - [11.9 当前构建与部署方式](#119-当前构建与部署方式)
+  - [11.10 Cloudflare Workers/Pages 前端部署方案](#1110-cloudflare-workerspages-前端部署方案)
+  - [11.11 前端迁移需要调整的部分](#1111-前端迁移需要调整的部分)
+  - [11.12 前端迁移中无法实现的功能](#1112-前端迁移中无法实现的功能)
+  - [11.13 前端迁移步骤](#1113-前端迁移步骤)
 
 ---
 
@@ -1174,3 +1188,730 @@ src/
 | DTO | 28 |
 | Constant | 13 |
 | Types | 9 |
+
+---
+
+## 11. 前端页面迁移实现
+
+### 11.1 前端项目结构
+
+前端项目位于 `web/` 目录，是一个独立的 React SPA 应用。
+
+```
+web/
+├── package.json                     # 依赖管理与脚本
+├── vite.config.js                   # Vite 构建配置
+├── tailwind.config.js               # Tailwind CSS 配置
+├── postcss.config.js                # PostCSS 配置
+├── index.html                       # HTML 入口
+├── public/                          # 静态资源（logo、favicon、支付图标等）
+└── src/
+    ├── index.jsx                    # React 入口（ReactDOM.createRoot）
+    ├── index.css                    # 全局样式（~970 行）
+    ├── App.jsx                      # 路由定义
+    │
+    ├── pages/                       # 页面级组件（与路由 1:1 对应）
+    │   ├── About/                   # 关于页面
+    │   ├── Channel/                 # 渠道管理（管理员）
+    │   ├── Chat/                    # 聊天界面（iframe 嵌入）
+    │   ├── Chat2Link/               # 聊天直链跳转
+    │   ├── Dashboard/               # 仪表板
+    │   ├── Forbidden/               # 403 页面
+    │   ├── Home/                    # 首页
+    │   ├── Log/                     # 使用日志
+    │   ├── Midjourney/              # Midjourney 日志
+    │   ├── Model/                   # 模型管理（管理员）
+    │   ├── ModelDeployment/         # 模型部署（管理员）
+    │   ├── NotFound/                # 404 页面
+    │   ├── Playground/              # AI Playground
+    │   ├── Pricing/                 # 定价页面
+    │   ├── PrivacyPolicy/           # 隐私政策
+    │   ├── Redemption/              # 兑换码管理（管理员）
+    │   ├── Setting/                 # 系统设置（管理员，含12个子标签页）
+    │   │   ├── Chat/                # 聊天设置
+    │   │   ├── Dashboard/           # 仪表板设置
+    │   │   ├── Drawing/             # 绘图设置
+    │   │   ├── Model/               # 模型设置
+    │   │   ├── Operation/           # 运营设置
+    │   │   ├── Payment/             # 支付设置
+    │   │   ├── Performance/         # 性能设置
+    │   │   ├── RateLimit/           # 限流设置
+    │   │   └── Ratio/               # 比例设置
+    │   ├── Setup/                   # 系统初始化向导
+    │   ├── Subscription/            # 订阅管理（管理员）
+    │   ├── Task/                    # 任务日志
+    │   ├── Token/                   # API 令牌管理
+    │   ├── TopUp/                   # 钱包/充值
+    │   ├── User/                    # 用户管理（管理员）
+    │   └── UserAgreement/           # 用户协议
+    │
+    ├── components/
+    │   ├── auth/                    # 登录、注册、OAuth、密码重置表单
+    │   ├── common/                  # 共享 UI 组件
+    │   │   ├── ui/                  # CardPro, JSONEditor, Loading 等
+    │   │   ├── markdown/            # Markdown 渲染器
+    │   │   ├── DocumentRenderer/    # 文档渲染（Markdown/HTML/iframe）
+    │   │   ├── modals/              # 风险确认、安全验证弹窗
+    │   │   └── logo/                # 自定义 OAuth 图标
+    │   ├── dashboard/               # 仪表板子组件（统计卡片、图表、公告等）
+    │   ├── layout/                  # 布局框架（PageLayout、HeaderBar、SiderBar、Footer）
+    │   │   └── headerbar/           # 头部导航（Logo、语言选择、主题切换、用户区）
+    │   ├── playground/              # Playground 子组件（17 个文件）
+    │   ├── settings/                # 管理员设置面板
+    │   │   └── personal/            # 个人设置（2FA、Passkey、OAuth 绑定等）
+    │   ├── setup/                   # 初始化向导步骤组件
+    │   ├── table/                   # 数据表格（channels、tokens、users 等 11 个实体）
+    │   │   └── (每个实体含 modals/)
+    │   ├── topup/                   # 充值组件
+    │   └── model-deployments/       # 模型部署组件
+    │
+    ├── constants/                   # 应用常量
+    ├── context/                     # React Context（Status、Theme、User）
+    ├── contexts/                    # Playground Context
+    ├── helpers/                     # 工具模块（API、认证、格式化等）
+    ├── hooks/                       # 自定义 Hooks（数据获取与逻辑）
+    │   ├── channels/                # 渠道数据 Hook
+    │   ├── chat/                    # 聊天 Hook
+    │   ├── common/                  # 通用 Hook（响应式、导航、通知等）
+    │   ├── dashboard/               # 仪表板数据 Hook
+    │   ├── playground/              # Playground Hook
+    │   └── (tokens, users, logs 等)
+    ├── i18n/                        # 国际化配置与语言包
+    │   └── locales/                 # zh-CN, zh-TW, en, fr, ru, ja, vi
+    └── services/                    # 服务层（安全验证）
+```
+
+### 11.2 前端技术栈与依赖
+
+#### 核心依赖
+
+| 包名 | 版本 | 用途 |
+|------|------|------|
+| `react` / `react-dom` | ^18.2.0 | React 框架 |
+| `react-router-dom` | ^6.3.0 | 客户端路由 |
+| `@douyinfe/semi-ui` | ^2.69.1 | **Semi Design UI 组件库**（主要 UI 框架） |
+| `@douyinfe/semi-icons` | ^2.63.1 | Semi Design 图标 |
+| `axios` | 1.13.5 | HTTP 客户端 |
+| `i18next` + `react-i18next` | ^23.16.8 / ^13.0.0 | 国际化 |
+| `i18next-browser-languagedetector` | ^7.2.0 | 语言自动检测 |
+| `sse.js` | ^2.6.0 | Server-Sent Events 客户端（Playground 流式传输） |
+| `react-markdown` | ^10.1.0 | Markdown 渲染 |
+| `marked` | ^4.1.1 | Markdown 解析 |
+| `katex` / `rehype-katex` / `remark-math` | — | LaTeX 数学公式渲染 |
+| `mermaid` | ^11.6.0 | 图表渲染 |
+| `@visactor/react-vchart` | ~1.8.8 | 数据图表（仪表板） |
+| `@visactor/vchart-semi-theme` | ~1.8.8 | VChart Semi 主题 |
+| `@lobehub/icons` | ^2.0.0 | AI 提供商品牌图标（首页展示） |
+| `dayjs` | ^1.11.11 | 日期处理 |
+| `lucide-react` | ^0.511.0 | 图标库 |
+| `react-dropzone` | ^14.2.3 | 文件上传 |
+| `react-turnstile` | ^1.0.5 | Cloudflare Turnstile CAPTCHA |
+| `react-telegram-login` | ^1.1.2 | Telegram 登录 |
+| `qrcode.react` | ^4.2.0 | 二维码生成 |
+| `clsx` | ^2.1.1 | 类名工具 |
+| `use-debounce` | ^10.0.4 | 防抖 Hook |
+
+#### 构建工具
+
+| 包名 | 用途 |
+|------|------|
+| `vite` ^5.2.0 | 构建工具 |
+| `@vitejs/plugin-react` | React Vite 插件 |
+| `@douyinfe/vite-plugin-semi` | Semi Design Vite 集成 |
+| `tailwindcss` ^3 | 原子化 CSS |
+| `postcss` / `autoprefixer` | CSS 处理 |
+| `prettier` / `eslint` | 代码格式化/检查 |
+
+#### Cloudflare Workers/Pages 兼容性
+
+**所有前端依赖均为纯浏览器端库，不依赖 Node.js 服务端运行时**，因此前端代码本身 100% 兼容 Cloudflare 部署环境。前端构建产物（HTML/JS/CSS/静态资源）是纯静态文件，可以直接部署到任何静态托管服务。
+
+### 11.3 前端路由与页面清单
+
+所有路由定义在 `web/src/App.jsx` 中：
+
+#### 公开页面
+
+| 路由 | 页面组件 | 说明 |
+|------|----------|------|
+| `/` | `Home` (lazy) | 首页：英雄横幅、API 地址展示、AI 提供商图标、公告弹窗 |
+| `/setup` | `Setup` | 系统初始化向导（数据库、管理员账户、使用模式） |
+| `/login` | `LoginForm` | 登录：用户名/密码、OAuth、Passkey、Turnstile、2FA |
+| `/register` | `RegisterForm` | 注册：支持 OAuth、邮箱验证、邀请码 |
+| `/reset` | `PasswordResetForm` | 请求密码重置 |
+| `/user/reset` | `PasswordResetConfirm` | 密码重置确认（含 token） |
+| `/oauth/github` | `OAuth2Callback` | GitHub OAuth 回调 |
+| `/oauth/discord` | `OAuth2Callback` | Discord OAuth 回调 |
+| `/oauth/oidc` | `OAuth2Callback` | OIDC OAuth 回调 |
+| `/oauth/linuxdo` | `OAuth2Callback` | LinuxDO OAuth 回调 |
+| `/oauth/:provider` | `DynamicOAuth2Callback` | 动态自定义 OAuth 回调 |
+| `/forbidden` | `Forbidden` | 403 禁止访问 |
+| `/about` | `About` (lazy) | 关于页面 |
+| `/pricing` | `Pricing` | 定价页面（可配置是否需要登录） |
+| `/user-agreement` | `UserAgreement` (lazy) | 用户协议 |
+| `/privacy-policy` | `PrivacyPolicy` (lazy) | 隐私政策 |
+| `/console/chat/:id?` | `Chat` | 聊天界面（iframe 嵌入外部聊天 UI） |
+| `*` | `NotFound` | 404 页面 |
+
+#### 需要登录的页面（`PrivateRoute`）
+
+| 路由 | 页面组件 | 说明 |
+|------|----------|------|
+| `/chat2link` | `Chat2Link` | 聊天直链跳转 |
+| `/console` | `Dashboard` (lazy) | **主仪表板**：统计卡片、图表、API 信息、公告、FAQ、在线状态监控 |
+| `/console/playground` | `Playground` | **AI Playground**：模型选择、参数控制、流式 SSE 响应、代码查看、调试面板 |
+| `/console/token` | `Token` | API 令牌管理（CRUD、复制密钥） |
+| `/console/topup` | `TopUp` | 钱包管理：充值卡、订阅计划、邀请/推荐 |
+| `/console/log` | `Log` | 使用日志表格（筛选、列选择） |
+| `/console/midjourney` | `Midjourney` | Midjourney 绘图日志 |
+| `/console/task` | `Task` | 任务日志（异步任务如音频） |
+| `/console/personal` | `PersonalSetting` | 个人设置：资料、2FA、Passkey、OAuth 绑定、密码、通知、签到日历 |
+
+#### 需要管理员权限的页面（`AdminRoute`，`role >= 10`）
+
+| 路由 | 页面组件 | 说明 |
+|------|----------|------|
+| `/console/models` | `ModelPage` | 模型管理：模型/供应商/预填充组 CRUD、同步向导 |
+| `/console/deployment` | `ModelDeploymentPage` | 模型部署管理（io.net 集成） |
+| `/console/subscription` | `Subscription` | 订阅计划管理 |
+| `/console/channel` | `Channel` | **渠道/提供商管理**：CRUD、测试、标签、批量操作、上游更新 |
+| `/console/redemption` | `Redemption` | 兑换码管理 |
+| `/console/user` | `User` | 用户管理：CRUD、角色、启用/禁用、绑定管理 |
+| `/console/setting` | `Setting` | **系统设置**（仅 root 用户，含 12 个标签页） |
+
+#### 系统设置标签页详情 (`/console/setting`)
+
+| 标签 | 组件 | 子设置项 |
+|------|------|---------|
+| 运营 | `OperationSetting` | 通用设置、日志、监控、信用额度、签到、敏感词、渠道亲和、导航模块、侧栏模块 |
+| 仪表板 | `DashboardSetting` | 数据面板、API 信息、公告、FAQ、Uptime Kuma |
+| 聊天 | `ChatsSetting` | 聊天配置 |
+| 绘图 | `DrawingSetting` | 绘图配置 |
+| 支付 | `PaymentSetting` | 通用支付、Epay、Stripe、Creem、Waffo 网关 |
+| 比例 | `RatioSetting` | 组比例、模型比例、上游比例同步、模型设置可视化编辑 |
+| 限流 | `RateLimitSetting` | 请求限流配置 |
+| 模型 | `ModelSetting` | 全局模型、Claude、Gemini、Grok 模型设置 |
+| 模型部署 | `ModelDeploymentSetting` | io.net 部署设置 |
+| 性能 | `PerformanceSetting` | 性能配置、磁盘缓存、GC、日志文件 |
+| 系统 | `SystemSetting` | SMTP、OAuth（GitHub/Discord/OIDC/LinuxDO/微信/Telegram/自定义）、Turnstile、系统设置 |
+| 其他 | `OtherSetting` | 首页内容、关于页面、公告、HTTP 状态码规则 |
+
+### 11.4 布局组件体系
+
+前端使用统一布局框架，所有页面共享同一套布局组件：
+
+```
+┌─────────────────────────────────────────────────┐
+│                   HeaderBar                      │
+│  ┌──────┐  ┌──────────────────────┐  ┌────────┐ │
+│  │ Logo │  │    Navigation        │  │UserArea│ │
+│  └──────┘  └──────────────────────┘  └────────┘ │
+├──────────┬──────────────────────────────────────┤
+│          │                                       │
+│ SiderBar │           Content                     │
+│ (仅       │         (App 路由)                   │
+│ /console │                                       │
+│ 下显示)   │                                       │
+│          │                                       │
+├──────────┴──────────────────────────────────────┤
+│                   FooterBar                      │
+└─────────────────────────────────────────────────┘
+```
+
+| 组件 | 文件 | 职责 |
+|------|------|------|
+| `PageLayout` | `components/layout/PageLayout.jsx` | 顶层布局，包裹整个应用。使用 Semi `Layout`。加载用户/状态数据。 |
+| `HeaderBar` | `components/layout/headerbar/index.jsx` | 固定顶部导航栏：Logo、导航链接、主题切换、语言选择、通知铃铛、用户下拉菜单 |
+| `SiderBar` | `components/layout/SiderBar.jsx` | 左侧边栏（仅 `/console/*` 路由显示，可折叠）：聊天、控制台、个人、管理员四个分区 |
+| `FooterBar` | `components/layout/Footer.jsx` | 页脚：版权、链接、支持自定义 HTML 页脚 |
+| `SetupCheck` | `components/layout/SetupCheck.js` | HOC：系统未初始化时重定向到 `/setup` |
+| `NoticeModal` | `components/layout/NoticeModal.jsx` | 系统公告弹窗 |
+| `SemiLocaleWrapper` | `index.jsx` | Semi UI 语言包同步（i18n → Semi locale） |
+
+### 11.5 前端与后端的交互方式
+
+#### HTTP 客户端 (`helpers/api.js`)
+
+```javascript
+export let API = axios.create({
+  baseURL: import.meta.env.VITE_REACT_APP_SERVER_URL || '',
+  headers: {
+    'New-API-User': getUserIdFromLocalStorage(),
+    'Cache-Control': 'no-store',
+  },
+});
+```
+
+**关键特性：**
+- **Base URL**：默认为空字符串（同源），即前端与后端在同一域名下部署
+- **可配置**：通过 `VITE_REACT_APP_SERVER_URL` 环境变量指定不同的 API 服务器
+- **GET 请求去重**：并发相同 GET 请求自动合并为单个请求
+- **全局错误拦截**：401 自动跳转登录、429 显示限流提示、500 显示服务器错误
+- **可跳过错误处理**：请求配置 `{ skipErrorHandler: true }` 可绕过全局拦截
+
+#### 认证机制
+
+| 机制 | 说明 |
+|------|------|
+| **Session Cookie** | 主要认证方式。Go 后端使用 Gin Sessions，设置 HttpOnly Cookie（30 天有效，SameSite=Strict） |
+| **`New-API-User` Header** | 每个请求携带用户 ID，辅助后端识别用户 |
+| **Bearer Token** | 仅在特定场景使用（如 Ollama SSE 流、Chat iframe），非全局 |
+| **localStorage `user`** | 存储完整用户对象（id、username、role、token、group、setting 等） |
+
+#### 认证流程
+
+```
+登录请求 POST /api/user/login
+    │
+    ├── 返回 { require_2fa: true } → 显示 2FA 验证 → POST /api/user/login/2fa
+    │
+    └── 成功返回用户数据
+         │
+         ├── localStorage.setItem('user', JSON.stringify(data))
+         ├── UserContext.dispatch({ type: 'login', payload: data })
+         ├── updateAPI()  // 重建 axios 实例
+         └── 跳转到 /console
+```
+
+#### 路由守卫
+
+| 守卫 | 逻辑 |
+|------|------|
+| `PrivateRoute` | 检查 `localStorage.user` 是否存在，否则跳转 `/login` |
+| `AdminRoute` | 同上 + 检查 `user.role >= 10`，否则跳转 `/forbidden` |
+| `AuthRedirect` | 已登录用户访问 `/login`、`/register` 时自动跳转 `/console` |
+
+#### 流式传输（SSE）
+
+前端有两处使用 SSE：
+
+1. **Playground 聊天流** (`hooks/playground/useApiRequest.jsx`)：
+   - 使用 `sse.js` 库连接 `/pg/chat/completions`
+   - 发送 `Content-Type: application/json` 和 `New-Api-User` 头
+   - 处理 `data: [DONE]` 结束信号
+
+2. **Ollama 模型拉取** (`components/table/channels/modals/OllamaModelModal.jsx`)：
+   - 使用原生 `fetch()` + `ReadableStream` 连接 `/api/channel/ollama/pull/stream`
+   - 发送 `Authorization: Bearer` 和 `New-API-User` 头
+   - 手动解析 SSE `data:` 行
+
+#### 前端调用的 API 端点汇总（~150+ 个）
+
+| 分类 | 主要端点 | 调用位置 |
+|------|---------|---------|
+| **系统状态** | `GET /api/status`, `GET /api/notice` | `PageLayout`, `Home` |
+| **认证** | `POST /api/user/login`, `GET /api/user/logout`, `POST /api/user/register` | 认证组件 |
+| **OAuth** | `GET /api/oauth/state`, `GET /api/oauth/:provider` | OAuth 组件 |
+| **用户自服务** | `GET/PUT /api/user/self`, `GET /api/user/models` | 个人设置、TopUp |
+| **2FA/Passkey** | `GET/POST /api/user/2fa/*`, `POST /api/user/passkey/*` | 安全设置 |
+| **管理员-用户** | `GET /api/user/`, `POST /api/user/manage` | 用户管理 |
+| **渠道** | `GET/POST/PUT/DELETE /api/channel/*` | 渠道管理 |
+| **令牌** | `GET/POST/PUT/DELETE /api/token/*` | 令牌管理 |
+| **日志** | `GET /api/log/*`, `GET /api/mj/*`, `GET /api/task/*` | 日志页面 |
+| **充值/支付** | `POST /api/user/topup`, `POST /api/user/stripe/pay` | 充值页面 |
+| **订阅** | `GET/POST /api/subscription/*` | 订阅管理 |
+| **设置** | `GET/PUT /api/option/` | 系统设置 |
+| **模型** | `GET/POST /api/models/*`, `GET/POST /api/vendors/*` | 模型管理 |
+| **部署** | `GET/POST /api/deployments/*` | 部署管理 |
+| **Playground** | `POST /pg/chat/completions` | Playground |
+| **定价** | `GET /api/pricing`, `GET /api/ratio_config` | 定价页面 |
+| **公开页面** | `GET /api/about`, `GET /api/home_page_content` | About、Home |
+| **性能** | `GET /api/performance/*` | 性能设置 |
+| **自定义OAuth** | `GET/POST /api/custom-oauth-provider/*` | OAuth 设置 |
+
+### 11.6 状态管理
+
+使用 **React Context + `useReducer`**，无外部状态管理库。
+
+| Context | 位置 | 状态结构 | 说明 |
+|---------|------|---------|------|
+| `UserContext` | `context/User/` | `{ user: Object \| undefined }` | 用户登录/登出状态 |
+| `StatusContext` | `context/Status/` | `{ status: Object \| undefined }` | 系统配置（从 `/api/status` 加载） |
+| `ThemeContext` | `context/Theme/` | `{ theme: 'light'\|'dark'\|'auto' }` | 主题模式 |
+| `PlaygroundContext` | `contexts/PlaygroundContext.jsx` | 图片粘贴处理 | Playground 局部 Context |
+
+**数据持久化**：大量使用 `localStorage` 缓存：
+- `user` — 用户信息
+- `status` — 系统配置
+- `system_name`, `logo`, `footer_html` — 提取的配置值
+- `i18nextLng` — 语言偏好
+- `theme-mode` — 主题模式
+- `channel_models` — 缓存的模型列表
+
+**数据获取**：通过 `hooks/` 目录下的自定义 Hooks 实现（如 `useChannelsData`, `useDashboardData`），调用 axios API 实例管理组件级状态。
+
+### 11.7 国际化实现
+
+| 配置项 | 值 |
+|--------|---|
+| 库 | `i18next` + `react-i18next` + `i18next-browser-languagedetector` |
+| 支持语言 | `zh-CN`（简体中文，回退语言）、`zh-TW`（繁体中文）、`en`、`fr`、`ru`、`ja`、`vi` |
+| 翻译文件 | `web/src/i18n/locales/{lang}.json` — 扁平 JSON，key 为中文源字符串 |
+| 用法 | `useTranslation()` Hook，调用 `t('中文key')` |
+| Semi UI 同步 | `SemiLocaleWrapper` 将 `i18n.language` 映射到 Semi 的 locale 对象 |
+| 语言检测 | 自动检测浏览器语言，支持用户手动切换 |
+| 规范化 | `normalizeLanguage()` 将变体映射到标准语言代码 |
+
+### 11.8 样式体系
+
+前端采用**三层混合样式**方案：
+
+| 层 | 技术 | 说明 |
+|---|------|------|
+| 1 | **Tailwind CSS** | 原子化工具类，颜色映射到 Semi Design CSS 变量 |
+| 2 | **Semi Design UI CSS** | 组件级主题，通过 `@douyinfe/vite-plugin-semi` 集成 |
+| 3 | **自定义 CSS** (`index.css`) | ~970 行自定义样式：布局、动画、深色模式、响应式 |
+
+**CSS Layer 顺序**：`tailwind-base → semi → tailwind-components → tailwind-utils`，确保 Tailwind 工具类可覆盖 Semi 样式。
+
+**深色模式**：通过 `body[theme-mode="dark"]` 属性 + `document.documentElement.classList.add('dark')` 激活，Semi Design 和 Tailwind 同步切换。
+
+**无 CSS Modules / styled-components / CSS-in-JS。**
+
+### 11.9 当前构建与部署方式
+
+#### 构建流程
+
+```bash
+cd web/
+bun install          # 安装依赖
+bun run build        # Vite 构建 → web/dist/
+cd ..
+go build             # embed.FS 将 web/dist/ 嵌入 Go 二进制
+```
+
+#### Go 嵌入机制
+
+```go
+// main.go
+//go:embed web/dist
+var buildFS embed.FS
+
+//go:embed web/dist/index.html
+var indexPage []byte
+```
+
+- Go 使用 `embed.FS` 将整个 `web/dist/` 目录编译进二进制文件
+- 启动时，`indexPage` 会被注入 Umami/Google Analytics 脚本
+- `router/web-router.go` 通过 `gin-contrib/static` 提供静态文件服务
+- 未匹配路由返回 `index.html`（SPA 回退）
+
+#### 前端环境变量
+
+仅一个 Vite 环境变量：
+
+| 变量 | 用途 | 默认值 |
+|------|------|--------|
+| `VITE_REACT_APP_SERVER_URL` | API 服务器 URL | `''`（同源） |
+
+#### 分离部署支持
+
+Go 后端支持 `FRONTEND_BASE_URL` 环境变量。设置后，非 API 路由会重定向到该外部前端 URL，支持前后端分离部署。
+
+### 11.10 Cloudflare Workers/Pages 前端部署方案
+
+#### 推荐方案：Cloudflare Pages
+
+**Cloudflare Pages 是部署前端 SPA 的最佳选择**，原因如下：
+
+| 特性 | 说明 |
+|------|------|
+| **原生 SPA 支持** | 自动处理 `_redirects` 或 `_headers` 文件，支持 SPA 回退到 `index.html` |
+| **自动构建** | 连接 Git 仓库后自动触发构建部署 |
+| **全球 CDN** | 静态资源通过 Cloudflare CDN 分发 |
+| **自定义域名** | 支持绑定自定义域名 |
+| **Preview 环境** | 每个 PR 自动生成预览 URL |
+| **无限带宽** | 免费套餐即可获得无限带宽 |
+| **与 Workers 同域** | 可以通过 Workers Routes 将 API 和前端部署在同一域名下 |
+
+#### 部署配置
+
+**`wrangler.toml`（Pages 配置示例）：**
+```toml
+name = "new-api-frontend"
+compatibility_date = "2024-01-01"
+
+[site]
+bucket = "./web/dist"
+```
+
+**Pages 构建设置：**
+```
+Build command: cd web && bun install && bun run build
+Build output directory: web/dist
+Root directory: /
+Environment variables:
+  VITE_REACT_APP_SERVER_URL = https://api.your-domain.com
+```
+
+**SPA 路由回退 (`web/dist/_redirects`)：**
+```
+/*  /index.html  200
+```
+
+#### 同域部署架构
+
+```
+                    ┌──────────────────┐
+                    │  Cloudflare CDN  │
+                    └────────┬─────────┘
+                             │
+              ┌──────────────┴──────────────┐
+              │                              │
+    ┌─────────┴─────────┐      ┌────────────┴────────────┐
+    │  Cloudflare Pages │      │   Cloudflare Workers     │
+    │  (前端静态资源)    │      │   (API 后端)             │
+    │  your-domain.com  │      │   your-domain.com/api/*  │
+    │  your-domain.com/  │     │   your-domain.com/v1/*   │
+    │  your-domain.com/  │     │   your-domain.com/pg/*   │
+    │  console/*        │      │   your-domain.com/mj/*   │
+    └───────────────────┘      └─────────────────────────┘
+```
+
+**Workers Routes 配置**（将 API 路由指向 Worker）：
+```toml
+# Workers wrangler.toml
+routes = [
+  { pattern = "your-domain.com/api/*", zone_name = "your-domain.com" },
+  { pattern = "your-domain.com/v1/*", zone_name = "your-domain.com" },
+  { pattern = "your-domain.com/v1beta/*", zone_name = "your-domain.com" },
+  { pattern = "your-domain.com/pg/*", zone_name = "your-domain.com" },
+  { pattern = "your-domain.com/mj/*", zone_name = "your-domain.com" },
+  { pattern = "your-domain.com/suno/*", zone_name = "your-domain.com" },
+  { pattern = "your-domain.com/kling/*", zone_name = "your-domain.com" },
+  { pattern = "your-domain.com/jimeng/*", zone_name = "your-domain.com" },
+  { pattern = "your-domain.com/dashboard/*", zone_name = "your-domain.com" },
+]
+```
+
+这样前端和 API 在同一域名下，**无需 CORS 配置**，前端可以使用相对路径调用 API（不需要设置 `VITE_REACT_APP_SERVER_URL`），Session Cookie 也能正常工作。
+
+### 11.11 前端迁移需要调整的部分
+
+#### 11.11.1 环境变量配置
+
+**当前**：`VITE_REACT_APP_SERVER_URL` 默认同源
+
+**迁移方案**：
+
+| 部署方式 | 配置 | 说明 |
+|---------|------|------|
+| 同域部署 | 不设置（默认同源） | Pages 处理前端，Workers Routes 处理 API |
+| 跨域部署 | 设置 `VITE_REACT_APP_SERVER_URL` | 需要在 Workers 端配置 CORS |
+
+#### 11.11.2 认证机制调整
+
+**当前**：Gin Sessions（Cookie-based，服务端存储）
+
+**迁移方案**：
+
+| 方案 | 说明 | 复杂度 |
+|------|------|--------|
+| **A. JWT 无状态 Token** | 后端签发 JWT，前端存 localStorage，每次请求 Bearer Token | 🟢 低 — 前端改动最小 |
+| **B. 签名 Cookie + KV** | Workers 签发签名 Cookie，Session 数据存 KV | 🟡 中 — 需要自实现 Session |
+| **C. 同域 Cookie + Workers Session** | Workers 使用加密 Cookie 存储 Session | 🟡 中 |
+
+**推荐方案 A（JWT 无状态 Token）**：
+
+前端改动：
+1. 登录成功后将 JWT 存入 `localStorage`（当前已经在做）
+2. 在 axios 请求拦截器中全局添加 `Authorization: Bearer <token>` 头
+3. 移除对 Cookie Session 的依赖
+
+```javascript
+// helpers/api.js 修改
+API.interceptors.request.use((config) => {
+  const user = JSON.parse(localStorage.getItem('user'));
+  if (user?.token) {
+    config.headers.Authorization = `Bearer ${user.token}`;
+  }
+  return config;
+});
+```
+
+#### 11.11.3 SSE 流式传输
+
+**当前**：使用 `sse.js` 库连接 `/pg/chat/completions`
+
+**迁移方案**：**无需修改前端代码**。Cloudflare Workers 完全支持 SSE 响应（`ReadableStream` + `TransformStream`），前端的 `sse.js` 客户端不需要任何更改。
+
+#### 11.11.4 Turnstile CAPTCHA
+
+**当前**：使用 `react-turnstile` 组件
+
+**迁移方案**：**无需修改前端代码**。Cloudflare Turnstile 在 Pages/Workers 环境下工作更好（同一 Cloudflare 生态）。后端验证仍通过 `challenges.cloudflare.com/turnstile/v0/siteverify` API。
+
+#### 11.11.5 Vite 开发代理
+
+**当前**：Vite `server.proxy` 将 `/api`、`/mj`、`/pg` 代理到 `http://localhost:3000`
+
+**迁移方案**：开发时需要将代理目标改为 Workers 的本地开发地址：
+
+```javascript
+// vite.config.js 修改
+server: {
+  proxy: {
+    '/api': { target: 'http://localhost:8787', changeOrigin: true },
+    '/mj':  { target: 'http://localhost:8787', changeOrigin: true },
+    '/pg':  { target: 'http://localhost:8787', changeOrigin: true },
+    '/v1':  { target: 'http://localhost:8787', changeOrigin: true },
+  },
+},
+```
+
+（`8787` 是 `wrangler dev` 的默认端口）
+
+#### 11.11.6 构建输出处理
+
+**当前**：`go:embed` 将 `web/dist/` 嵌入 Go 二进制
+
+**迁移方案**：
+- 前端独立构建，产物部署到 Cloudflare Pages
+- 不再需要 `go:embed`，前后端完全分离
+- CI/CD 中分别构建前端和 Workers 后端
+
+#### 11.11.7 Analytics 脚本注入
+
+**当前**：Go 启动时将 Umami/Google Analytics 脚本注入 `index.html`
+
+```go
+// main.go 中
+indexPage = []byte(strings.Replace(string(indexPage),
+    "</head>", umamiScript+"</head>", 1))
+```
+
+**迁移方案**：
+
+| 方案 | 说明 |
+|------|------|
+| **A. 构建时注入** | 在 Vite 构建配置中通过 `vite-plugin-html` 注入脚本 |
+| **B. Pages Functions** | 使用 Cloudflare Pages Functions 在 `_middleware.ts` 中动态注入 |
+| **C. Zaraz** | 使用 Cloudflare Zaraz 管理第三方脚本（推荐） |
+
+推荐方案 C（Zaraz）— Cloudflare 原生的第三方脚本管理工具，零代码配置。
+
+### 11.12 前端迁移中无法实现的功能
+
+#### ❌ 1. Chat iframe 外部聊天链接（部分受限）
+
+**当前**：`/console/chat/:id?` 页面通过 iframe 嵌入外部聊天 UI（如 ChatGPT Next Web），使用用户的 API 密钥
+
+**问题**：
+- iframe 嵌入的外部聊天 UI 本身不受控，取决于第三方服务是否允许被 iframe 嵌入
+- 跨域 iframe 可能受 CSP（Content Security Policy）限制
+
+**影响**：功能本身可迁移，但依赖第三方服务的可嵌入性，非 Cloudflare 限制
+
+#### ❌ 2. Ollama 模型拉取流（后端限制）
+
+**当前**：`OllamaModelModal` 通过 SSE 流式显示 Ollama 模型拉取进度
+
+**问题**：Ollama 是本地部署的模型运行时，Workers 无法连接本地 Ollama 实例。此功能在后端层面已不可行。
+
+**前端影响**：相关 UI 组件（`OllamaModelModal`）需要隐藏或移除
+
+#### ❌ 3. 性能监控面板（后端限制）
+
+**当前**：`/console/setting` → 性能标签页显示 CPU、内存、磁盘使用率，支持强制 GC、清除磁盘缓存
+
+**问题**：Workers 无法提供 OS 级系统指标
+
+**前端影响**：性能设置页面需要简化或改为显示 Workers Analytics 数据
+
+#### ❌ 4. io.net 模型部署管理（部分受限）
+
+**当前**：`/console/deployment` 完整的 GPU 部署管理界面
+
+**问题**：部署创建、日志查看等功能依赖长时间运行的后端操作
+
+**前端影响**：基本 CRUD 可保留，实时日志和容器详情可能需要降级
+
+### 11.13 前端迁移步骤
+
+#### 第一步：前端独立部署到 Cloudflare Pages
+
+1. **创建 Cloudflare Pages 项目**
+   ```bash
+   cd web
+   npx wrangler pages project create new-api-frontend
+   ```
+
+2. **添加 SPA 回退配置**
+   ```bash
+   # web/public/_redirects
+   /*  /index.html  200
+   ```
+
+3. **配置环境变量**
+   - 开发环境：不设置 `VITE_REACT_APP_SERVER_URL`（使用 Vite 代理）
+   - 生产环境（跨域）：设置为 Workers API 的 URL
+   - 生产环境（同域）：不设置
+
+4. **构建并部署**
+   ```bash
+   cd web
+   bun install
+   bun run build
+   npx wrangler pages deploy dist --project-name new-api-frontend
+   ```
+
+5. **配置自定义域名**（可选）
+   在 Cloudflare Dashboard → Pages → 自定义域 中添加
+
+#### 第二步：调整前端认证方式
+
+1. 添加 axios 请求拦截器，全局携带 Bearer Token
+2. 移除对服务端 Session Cookie 的依赖
+3. 保留 `localStorage` 用户缓存机制
+
+#### 第三步：配置同域路由
+
+1. 在 Cloudflare Dashboard 中为同一域名配置 Workers Routes
+2. API 路径（`/api/*`、`/v1/*` 等）路由到 Workers
+3. 其他路径（`/`、`/console/*` 等）由 Pages 处理
+
+#### 第四步：移除不兼容的 UI 组件
+
+1. 隐藏 Ollama 相关 UI（`OllamaModelModal`、Ollama 版本检查）
+2. 简化性能监控面板
+3. 评估 io.net 部署管理的可行性
+
+#### 第五步：CI/CD 配置
+
+```yaml
+# GitHub Actions 示例
+name: Deploy Frontend
+on:
+  push:
+    branches: [main]
+    paths: ['web/**']
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: cd web && bun install && bun run build
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          command: pages deploy web/dist --project-name new-api-frontend
+```
+
+#### 前端迁移工作量评估
+
+| 任务 | 复杂度 | 说明 |
+|------|--------|------|
+| Pages 部署配置 | 🟢 低 | 标准 Vite SPA 部署 |
+| SPA 回退配置 | 🟢 低 | 添加 `_redirects` 文件 |
+| 环境变量调整 | 🟢 低 | 一个变量 |
+| 认证方式调整 | 🟡 中 | 添加请求拦截器，需配合后端 JWT 实现 |
+| 同域路由配置 | 🟡 中 | Workers Routes + Pages 协调 |
+| Analytics 迁移 | 🟢 低 | 使用 Zaraz 或构建时注入 |
+| 移除不兼容 UI | 🟢 低 | 条件渲染或移除少量组件 |
+| Vite 开发代理调整 | 🟢 低 | 改代理目标端口 |
+| CI/CD 配置 | 🟢 低 | 标准 GitHub Actions |
+| **总体** | 🟢 **低** | **前端迁移是整个项目中最简单的部分** |
+
+> **结论**：前端是一个标准的 React SPA，所有代码运行在浏览器端，不依赖服务端运行时。迁移到 Cloudflare Pages 几乎不需要修改前端代码本身，主要工作在于部署配置和认证方式的调整。前端迁移应作为整体迁移的**第一步**，因为它风险最低、效果最直接。
